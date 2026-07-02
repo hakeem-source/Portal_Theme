@@ -93,15 +93,159 @@ def build_generated_css(theme) -> str:
 	return "\n".join(parts)
 
 
-def build_component_css(theme) -> str:
-	"""Entity-based styling rows. Populated by the component registry (added in the
-	entity-styling commit); safe no-op until the child table exists."""
-	return ""
+# ---------------------------------------------------------
+# COMPONENT REGISTRY (entity-based styling)
+# ---------------------------------------------------------
+# Human-named UI entities -> vetted Frappe v15 Desk/website selectors.
+# Extending the registry = adding one entry here (and mirroring the key in the
+# Component Style child doctype's `component` Select options).
+
+CUSTOM_SELECTOR = "Custom Selector"
+
+COMPONENT_REGISTRY = {
+	# navbar
+	"Navbar / Bar": ".navbar",
+	"Navbar / Links": (
+		".navbar .navbar-brand, .navbar .navbar-nav > li > .nav-link, "
+		".navbar #navbar-breadcrumbs li a"
+	),
+	"Navbar / Dropdown Menu": ".navbar .dropdown-menu, .navbar .dropdown-menu .dropdown-item",
+	"Navbar / Awesomebar Input": ".navbar .awesomplete > input.form-control",
+	"Navbar / Awesomebar Dropdown": ".navbar .awesomplete > ul, .navbar .awesomplete > ul > li",
+	"Navbar / Awesomebar Selected Item": '.navbar .awesomplete > ul > li[aria-selected="true"]',
+	# buttons
+	"Button / Primary": ".btn.btn-primary",
+	"Button / Secondary": ".btn.btn-secondary",
+	"Button / Danger": ".btn.btn-danger",
+	# fields (editable vs read-only styled independently)
+	"Field / Editable Input": (
+		"input.form-control:not([readonly]):not([disabled]), "
+		"textarea.form-control:not([readonly]):not([disabled]), "
+		"select.form-control:not([disabled])"
+	),
+	"Field / Read-only or Disabled": (
+		".like-disabled-input, .form-control[readonly], .form-control[disabled], input[disabled]"
+	),
+	"Field / Label": ".control-label",
+	# form view
+	"Form / Section Head": ".form-section .section-head, .section-head",
+	"Form / Sidebar": ".form-sidebar",
+	"Form / Grid Header": ".grid-heading-row",
+	"Form / Grid Row": ".grid-body .grid-row",
+	"Form / Tab (inactive)": ".form-tabs-list .nav-link",
+	"Form / Tab (active)": ".form-tabs-list .nav-link.active",
+	# list view
+	"List / Header": ".list-row-head",
+	"List / Row": ".list-row-container .list-row",
+	"List / Zebra Stripe (even rows)": ".list-row-container:nth-child(even) .list-row",
+	"List / Filter Controls": ".standard-filter-section .form-control",
+	# dialogs
+	"Dialog / Header": ".modal .modal-header",
+	"Dialog / Body": ".modal .modal-body",
+	"Dialog / Content": ".modal .modal-content",
+	# sidebar
+	"Sidebar / Item": ".desk-sidebar .desk-sidebar-item",
+	"Sidebar / Item Selected": ".desk-sidebar .desk-sidebar-item.selected",
+	# page chrome
+	"Page / Background": "body, .content.page-container",
+	"Page / Title": ".page-title .title-text",
+	"Page / Breadcrumbs": "#navbar-breadcrumbs li a",
+	# workspace widgets
+	"Workspace / Widget Card": ".widget",
+	"Workspace / Widget Title": ".widget .widget-title",
+	"Workspace / Shortcut": ".widget.shortcut-widget-box",
+	# login page (delivered via web_include_js)
+	"Login / Card": ".for-login .page-card, .for-login .page-card-container",
+	"Login / Card Button": ".for-login .btn-primary, .for-login .btn-login",
+	"Login / Card Inputs": ".for-login .form-control",
+	"Login / Footer": ".web-footer",
+	# escape hatch: selector comes from the row itself
+	CUSTOM_SELECTOR: None,
+}
+
+# property label -> (css property, pseudo-class suffix)
+COMPONENT_PROPERTIES = {
+	"Background": ("background-color", ""),
+	"Text": ("color", ""),
+	"Border Color": ("border-color", ""),
+	"Border Radius": ("border-radius", ""),
+	"Box Shadow": ("box-shadow", ""),
+	"Hover Background": ("background-color", ":hover"),
+	"Hover Text": ("color", ":hover"),
+	"Focus Ring": ("box-shadow", ":focus"),
+}
+
+
+def _component_selector(row):
+	if row.component == CUSTOM_SELECTOR:
+		return (row.custom_selector or "").strip()
+	return COMPONENT_REGISTRY.get(row.component) or ""
+
+
+def _apply_pseudo(selector: str, pseudo: str) -> str:
+	if not pseudo:
+		return selector
+	return ", ".join(part.strip() + pseudo for part in selector.split(","))
+
+
+def _dark_scope(selector: str) -> str:
+	return ", ".join('[data-theme="dark"] ' + part.strip() for part in selector.split(","))
+
+
+def _normalize_value(prop_label: str, value: str) -> str:
+	value = (value or "").strip().rstrip(";")
+	if not value:
+		return ""
+	if prop_label == "Border Radius" and value.isdigit():
+		value += "px"
+	return value
 
 
 def validate_component_styles(theme):
-	"""Row validation for the entity-styling layer; no-op until the child table exists."""
-	return
+	"""Reject invalid rows at save time with actionable messages."""
+	for row in theme.get("component_styles") or []:
+		if not row.enabled:
+			continue
+		label = f"Component Styles row #{row.idx}"
+		if row.component not in COMPONENT_REGISTRY:
+			frappe.throw(f"{label}: unknown component {row.component!r}.")
+		if row.property not in COMPONENT_PROPERTIES:
+			frappe.throw(f"{label}: unknown property {row.property!r}.")
+		if row.component == CUSTOM_SELECTOR and not (row.custom_selector or "").strip():
+			frappe.throw(f"{label}: 'Custom Selector' rows need a selector.")
+		if "}" in (row.custom_selector or "") or "{" in (row.custom_selector or ""):
+			frappe.throw(f"{label}: the selector must not contain braces.")
+		if not (row.light_value or "").strip() and not (row.dark_value or "").strip():
+			frappe.throw(f"{label}: set a light and/or dark value.")
+
+
+def build_component_css(theme) -> str:
+	"""CSS from Component Style rows: one light rule per row, plus a
+	[data-theme="dark"]-scoped counterpart when a dark value is set."""
+	light_rules = []
+	dark_rules = []
+
+	for row in theme.get("component_styles") or []:
+		if not row.enabled:
+			continue
+		selector = _component_selector(row)
+		prop = COMPONENT_PROPERTIES.get(row.property)
+		if not selector or not prop:
+			continue
+		css_prop, pseudo = prop
+		target = _apply_pseudo(selector, pseudo)
+
+		light_value = _normalize_value(row.property, row.light_value)
+		dark_value = _normalize_value(row.property, row.dark_value)
+
+		if light_value:
+			light_rules.append(f"{target} {{ {css_prop}: {light_value} !important; }}")
+		if dark_value:
+			dark_rules.append(
+				f"{_dark_scope(target)} {{ {css_prop}: {dark_value} !important; }}"
+			)
+
+	return "\n".join(light_rules + dark_rules)
 
 
 def split_custom_tail(css_content: str) -> str:

@@ -5,12 +5,15 @@ import frappe
 from portal_theme import css_builder
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_theme_bundle():
 	"""Merged Desk/portal stylesheet: Portal Theme Setting chrome CSS + the active
 	Portal Theme's css_content. Redis-cached; invalidated on save of any theming
 	doctype. Never raises — a broken build returns empty CSS and an Error Log
-	entry instead of breaking every page load."""
+	entry instead of breaking every page load.
+
+	allow_guest so the login page (web_include_js) can style Login/* entities
+	pre-auth; the response is CSS only, nothing sensitive."""
 	cached = frappe.cache().get_value(css_builder.CACHE_KEY)
 	if cached is not None:
 		return {"css": cached["css"], "hash": cached["hash"], "cached": True}

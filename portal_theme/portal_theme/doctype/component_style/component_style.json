@@ -1,0 +1,79 @@
+{
+ "actions": [],
+ "creation": "2026-07-03 10:30:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "component",
+  "property",
+  "light_value",
+  "dark_value",
+  "custom_selector"
+ ],
+ "fields": [
+  {
+   "columns": 1,
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "columns": 3,
+   "fieldname": "component",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Component",
+   "options": "Navbar / Bar\nNavbar / Links\nNavbar / Dropdown Menu\nNavbar / Awesomebar Input\nNavbar / Awesomebar Dropdown\nNavbar / Awesomebar Selected Item\nButton / Primary\nButton / Secondary\nButton / Danger\nField / Editable Input\nField / Read-only or Disabled\nField / Label\nForm / Section Head\nForm / Sidebar\nForm / Grid Header\nForm / Grid Row\nForm / Tab (inactive)\nForm / Tab (active)\nList / Header\nList / Row\nList / Zebra Stripe (even rows)\nList / Filter Controls\nDialog / Header\nDialog / Body\nDialog / Content\nSidebar / Item\nSidebar / Item Selected\nPage / Background\nPage / Title\nPage / Breadcrumbs\nWorkspace / Widget Card\nWorkspace / Widget Title\nWorkspace / Shortcut\nLogin / Card\nLogin / Card Button\nLogin / Card Inputs\nLogin / Footer\nCustom Selector",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "property",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Property",
+   "options": "Background\nText\nBorder Color\nBorder Radius\nBox Shadow\nHover Background\nHover Text\nFocus Ring",
+   "reqd": 1
+  },
+  {
+   "columns": 2,
+   "description": "Color hex, or any CSS value (gradients and shadows allowed)",
+   "fieldname": "light_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Light Value"
+  },
+  {
+   "columns": 2,
+   "fieldname": "dark_value",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Dark Value"
+  },
+  {
+   "depends_on": "eval:doc.component == \"Custom Selector\"",
+   "fieldname": "custom_selector",
+   "fieldtype": "Data",
+   "label": "Custom Selector",
+   "mandatory_depends_on": "eval:doc.component == \"Custom Selector\""
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-03 10:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Portal Theme",
+ "name": "Component Style",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

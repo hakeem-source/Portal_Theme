@@ -32,7 +32,7 @@ app_include_js = ["/assets/portal_theme/js/theme_loader.js"]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/portal_theme/css/portal_theme.css"
-# web_include_js = "/assets/portal_theme/js/portal_theme.js"
+web_include_js = ["/assets/portal_theme/js/theme_loader.js"]
 
 # include custom scss in every website theme (without file extension ".scss")
 # website_theme_scss = "portal_theme/public/scss/website"

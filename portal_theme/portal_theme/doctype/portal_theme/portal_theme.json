@@ -29,6 +29,8 @@
   "add_variables",
   "section_break_eseb",
   "theme_variables",
+  "component_styles_section",
+  "component_styles",
   "css_content"
  ],
  "fields": [
@@ -66,6 +68,18 @@
    "fieldtype": "Table",
    "label": "Theme Variables",
    "options": "Theme Variable"
+  },
+  {
+   "fieldname": "component_styles_section",
+   "fieldtype": "Section Break",
+   "label": "Component Styles"
+  },
+  {
+   "description": "Style named UI entities (buttons, editable vs read-only fields, list rows, dialogs, login card...) without hunting selectors. Rows are data: they regenerate deterministically and survive every Regenerate. Use the 'Custom Selector' component for anything not listed.",
+   "fieldname": "component_styles",
+   "fieldtype": "Table",
+   "label": "Component Styles",
+   "options": "Component Style"
   },
   {
    "description": "Fully editable. The section between PT:GENERATED:BEGIN and PT:GENERATED:END is rebuilt by the Regenerate CSS button (a revision of the previous content is saved first); everything after PT:CUSTOM:BEGIN is always preserved. Note: the generated tokens include --border-color, which overrides Frappe's own desk-wide border variable.",
