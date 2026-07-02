@@ -1,10 +1,13 @@
 # Copyright (c) 2025, Sudhanshu Badole
 # For license information, please see license.txt
 
-import re
-
 import frappe
+from frappe import _
 from frappe.model.document import Document
+
+from portal_theme import css_builder
+
+REVISION_LIMIT = 20  # FIFO ring buffer: inserting past the cap evicts the oldest
 
 
 class PortalTheme(Document):
@@ -12,16 +15,44 @@ class PortalTheme(Document):
 	# HOOKS
 	# ---------------------------------------------------------
 
-	def on_update(self):
-		"""Ensure slug consistency after updating"""
+	def before_save(self):
+		# only an activation should deactivate the others (saving an inactive
+		# theme must never touch the currently active one)
+		if self.is_active:
+			others = frappe.get_all(
+				self.doctype,
+				filters={"is_active": 1, "name": ["!=", self.name]},
+				pluck="name",
+			)
+			for name in others:
+				frappe.db.set_value(self.doctype, name, "is_active", 0)
+
 		self.slugify_theme_name()
 
-	def before_save(self):
-		all_doc = frappe.db.get_all(self.doctype, filters={"is_active": 1}, fields=["name"])
-		for doc in all_doc:
-			frappe.db.set_value(self.doctype, doc.name, "is_active", 0)
-		self.slugify_theme_name()
-		self.generate_css_for_doc()
+		if not (self.css_content or "").strip():
+			# first save (or cleared field): seed generated CSS + custom tail
+			self.css_content = css_builder.initial_css_content(self)
+		elif not self.is_new():
+			# manual edit: snapshot the previous content before it is replaced
+			before = self.get_doc_before_save()
+			if before and (before.css_content or "") != (self.css_content or ""):
+				make_css_revision(self.name, before.css_content, "Manual Edit")
+
+	def validate(self):
+		css_builder.validate_component_styles(self)
+
+	def on_update(self):
+		css_builder.clear_theme_cache()
+
+	def on_trash(self):
+		revisions = frappe.get_all(
+			"Portal Theme CSS Revision", filters={"portal_theme": self.name}, pluck="name"
+		)
+		for name in revisions:
+			frappe.delete_doc(
+				"Portal Theme CSS Revision", name, ignore_permissions=True, force=True
+			)
+		css_builder.clear_theme_cache()
 
 	# ---------------------------------------------------------
 	# SLUG UTILITIES
@@ -29,139 +60,76 @@ class PortalTheme(Document):
 
 	@staticmethod
 	def slugify(value: str) -> str:
-		"""Convert a string to a URL/browser safe slug"""
-		if not value:
-			return ""
-
-		value = value.strip().lower()
-		value = re.sub(r"\s+", "-", value)
-		value = re.sub(r"[^a-z0-9\-]", "", value)
-		value = re.sub(r"-+", "-", value)
-
-		return value.strip("-")
+		return css_builder.slugify(value)
 
 	def slugify_theme_name(self):
-		"""Always derive slug from theme_name"""
 		if self.theme_name:
 			self.slug = self.slugify(self.theme_name)
 
-	def get_css_from_theme_template(self):
-		"""
-		Fetch CSS body from Theme Template doctype
-		"""
-
-		exist = frappe.db.exists("Theme Template", self.theme_template)
-		if not exist:
-			return f"{self.theme_template} Theme Template not found."
-
-		template = frappe.db.get_value("Theme Template", self.theme_template, "theme_template")
-
-		if not template:
-			return f"{self.theme_template} CSS Content is empty."
-
-		return template
-
 	# ---------------------------------------------------------
-	# CSS GENERATION
+	# REGENERATION (explicit, confirmed, revision-backed)
 	# ---------------------------------------------------------
 
-	def generate_css_for_doc(self):
-		"""
-		Generates CSS using theme_variables table and stores
-		final CSS inside css_content field
-		"""
-		theme_name = self.theme_name or ""
-		slug = self.slugify(theme_name)
+	@frappe.whitelist()
+	def regenerate_css(self):
+		"""Rebuild the generated (sentinel) section from theme variables, the linked
+		Theme Template and Component Style rows. The custom tail is preserved and the
+		pre-image is always snapshotted as a revision first."""
+		frappe.only_for("System Manager")
 
-		variables = []
-		for row in self.get("theme_variables") or []:
-			var_name = (row.variable_name or "").strip()
-			if not var_name:
-				continue
+		if not self.theme_template:
+			frappe.throw(_("Select a Theme Template before regenerating."))
 
-			variables.append(
-				{
-					"variable_name": var_name,
-					"light_value": row.light_value or "",
-					"dark_value": row.dark_value or "",
-				}
-			)
+		make_css_revision(self.name, self.css_content, "Regenerate")
+		new_css = css_builder.regenerate_css_content(self)
+		self.db_set("css_content", new_css)
+		css_builder.clear_theme_cache()
+		return new_css
 
-		css_content = self.build_css_content(variables)
-		css_content += "\n\n/* Custom CSS Body */\n"
-		css_content += self.get_css_from_theme_template() or ""
 
-		# Save without updating modified timestamp
-		self.db_set("css_content", css_content, update_modified=False)
-		self.db_set("slug", slug, update_modified=False)
+# ---------------------------------------------------------
+# REVISIONS
+# ---------------------------------------------------------
 
-		frappe.logger("portal_theme").info(f"Generated Portal Theme CSS for {theme_name} ({slug})")
 
-	# ---------------------------------------------------------
-	# CORE CSS BUILDER
-	# ---------------------------------------------------------
+def make_css_revision(theme_name, old_css, trigger, note=None):
+	"""Snapshot old_css as a revision, keeping at most REVISION_LIMIT per theme
+	(FIFO: the oldest revision is deleted to make room for the newest)."""
+	if not (old_css or "").strip():
+		return
 
-	def build_css_content(self, variables):
-		"""
-		Builds rooted CSS variables for light & dark themes.
+	frappe.get_doc(
+		{
+			"doctype": "Portal Theme CSS Revision",
+			"portal_theme": theme_name,
+			"trigger": trigger,
+			"css_content": old_css,
+			"note": note,
+		}
+	).insert(ignore_permissions=True)
 
-		variables format:
-		[
-			{
-				"variable_name": "primary",
-				"light_value": "#1e88e5",
-				"dark_value": "#0d47a1"
-			},
-			...
-		]
-		"""
+	stale = frappe.get_all(
+		"Portal Theme CSS Revision",
+		filters={"portal_theme": theme_name},
+		order_by="creation desc",
+		pluck="name",
+	)[REVISION_LIMIT:]
+	for name in stale:
+		frappe.delete_doc(
+			"Portal Theme CSS Revision", name, ignore_permissions=True, force=True
+		)
 
-		def safe_name(name: str) -> str:
-			return PortalTheme.slugify(name) if name else ""
 
-		if not variables:
-			return ""
+@frappe.whitelist()
+def restore_revision(revision):
+	"""Restore a CSS snapshot onto its theme. The theme's current CSS is snapshotted
+	as a Pre-Restore revision first, so a restore can itself be undone."""
+	frappe.only_for("System Manager")
 
-		light_lines = []
-		dark_lines = []
+	rev = frappe.get_doc("Portal Theme CSS Revision", revision)
+	theme = frappe.get_doc("Portal Theme", rev.portal_theme)
 
-		for v in variables:
-			name = (v.get("variable_name") or "").strip()
-			if not name:
-				continue
-
-			cname = safe_name(name)
-			light_val = v.get("light_value") or ""
-			dark_val = v.get("dark_value") or light_val
-			dark_mode_text = v.get("light_text") or "#000000"
-			light_mode_text = v.get("dark_text") or "#ffffff"
-
-			light_lines.append(f"  --{cname}: {light_val};")
-			light_lines.append(f"  --{cname}-text-color: {dark_mode_text};")
-
-			dark_lines.append(f"  --{cname}: {dark_val};")
-			dark_lines.append(f"  --{cname}-text-color: {light_mode_text};")
-
-		# Light mode block (include border variables)
-		border_var_lines = [
-			f"  --border-radius: {self.border_radius or '6'}px;",
-			f"  --border-color: {self.border_color or '#e0e0e0'};",
-			"  --border-width: 1px;",
-		]
-
-		root_block = ":root {\n" + "\n".join(light_lines + border_var_lines) + "\n}\n\n"
-
-		# Dark mode using HTML attribute or class
-		dark_attr_block = ':root[data-theme="dark"] {\n' + "\n".join(dark_lines) + "\n}\n\n"
-
-		# Dark mode via system preference
-		# indented_dark = "\n".join("    " + line.strip() for line in dark_lines)
-		# dark_media_block = (
-		# 	"@media (prefers-color-scheme: dark) {\n"
-		# 	"  :root {\n"
-		# 	+ indented_dark +
-		# 	"\n  }\n}\n\n"
-		# )
-		dark_media_block = ""
-
-		return root_block + dark_attr_block + dark_media_block
+	make_css_revision(theme.name, theme.css_content, "Pre-Restore", note=_("Before restoring {0}").format(revision))
+	theme.db_set("css_content", rev.css_content)
+	css_builder.clear_theme_cache()
+	return theme.name

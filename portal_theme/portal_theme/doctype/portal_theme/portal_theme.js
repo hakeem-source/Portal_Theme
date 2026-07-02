@@ -2,6 +2,23 @@
 // For license information, see license.txt
 
 frappe.ui.form.on("Portal Theme", {
+	refresh(frm) {
+		if (frm.is_new()) return;
+
+		frm.add_custom_button(__("Regenerate CSS"), () => {
+			if (frm.is_dirty()) {
+				frappe.msgprint(__("Save the document first, then regenerate."));
+				return;
+			}
+			frappe.confirm(
+				__(
+					"Rebuild the generated section from Theme Variables, the linked Theme Template and Component Style rows?<br><br>The current CSS will be saved as a revision. Everything after the <code>PT:CUSTOM:BEGIN</code> marker is preserved."
+				),
+				() => frm.call("regenerate_css").then(() => frm.reload_doc())
+			);
+		});
+	},
+
 	add_variables(frm) {
 		if (!frm.doc.theme_template) {
 			frappe.throw("Select Theme Template first.");
@@ -26,7 +43,9 @@ function generate_color_rows(frm) {
 	colors.forEach((c) => {
 		if (!c.value) return;
 
-		let exists = (frm.doc.variables || []).some((row) => row.variable_name === c.name);
+		let exists = (frm.doc.theme_variables || []).some(
+			(row) => row.variable_name === `--${c.name}`
+		);
 		if (exists) return;
 
 		const light = c.value;

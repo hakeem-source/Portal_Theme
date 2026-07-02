@@ -68,11 +68,11 @@
    "options": "Theme Variable"
   },
   {
+   "description": "Fully editable. The section between PT:GENERATED:BEGIN and PT:GENERATED:END is rebuilt by the Regenerate CSS button (a revision of the previous content is saved first); everything after PT:CUSTOM:BEGIN is always preserved. Note: the generated tokens include --border-color, which overrides Frappe's own desk-wide border variable.",
    "fieldname": "css_content",
-   "fieldtype": "Text",
-   "in_list_view": 1,
+   "fieldtype": "Code",
    "label": "CSS Content",
-   "read_only": 1
+   "options": "CSS"
   },
   {
    "fieldname": "column_break_zvkr",
@@ -125,11 +125,11 @@
    "label": "Add Variables"
   },
   {
+   "description": "Required only for Regenerate CSS — a theme can also be fully hand-written.",
    "fieldname": "theme_template",
    "fieldtype": "Link",
    "label": "Theme Template",
-   "options": "Theme Template",
-   "reqd": 1
+   "options": "Theme Template"
   },
   {
    "fieldname": "basic_details_section",
@@ -192,5 +192,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "track_changes": 1
 }
