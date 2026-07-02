@@ -47,11 +47,13 @@
   "section_break_ghnq",
   "card_background_color",
   "card_header_color",
+  "card_header_text_color",
   "card_text_color",
   "form_background_color",
   "form_text_color",
   "column_break_scyz",
-  "section_heading_color"
+  "section_heading_color",
+  "label_text_color"
  ],
  "fields": [
   {
@@ -73,6 +75,16 @@
    "fieldname": "navbar_color",
    "fieldtype": "Color",
    "label": "Navbar color"
+  },
+  {
+   "fieldname": "card_header_text_color",
+   "fieldtype": "Color",
+   "label": "Card Header Text Color"
+  },
+  {
+   "fieldname": "label_text_color",
+   "fieldtype": "Color",
+   "label": "Label Text Color"
   },
   {
    "default": "0",

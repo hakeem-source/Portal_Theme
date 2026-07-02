@@ -133,3 +133,158 @@ def regenerate_css_content(theme) -> str:
 def initial_css_content(theme) -> str:
 	"""First-save content for a new theme."""
 	return build_generated_css(theme) + "\n\n" + DEFAULT_CUSTOM_TAIL
+
+
+# ---------------------------------------------------------
+# SETTINGS CSS (server-side port of the old client builder)
+# ---------------------------------------------------------
+
+
+def build_settings_css(settings) -> str:
+	"""Desk chrome CSS from Portal Theme Setting. Emits ONLY set fields — the old
+	client builder emitted `inherit !important` for every empty field, breaking
+	Desk defaults. Variables are prefixed --pt- to avoid colliding with Frappe
+	core variables and theme tokens."""
+	if not settings.enable:
+		return ""
+
+	css_vars = {}
+	rules = []
+
+	def var(name, value):
+		if value:
+			css_vars[name] = value
+		return bool(value)
+
+	# page ground
+	if var("--pt-portal-bg", settings.portal_background_color):
+		rules.append(
+			"html, body, .content.page-container {\n"
+			"  background-color: var(--pt-portal-bg) !important;\n}"
+		)
+
+	# navbar — text via allowlist so dropdown menus and the awesomebar results
+	# (which live inside .navbar but render on light menus) are never matched
+	if var("--pt-navbar-bg", settings.navbar_color):
+		rules.append(".navbar {\n  background-color: var(--pt-navbar-bg) !important;\n}")
+	if var("--pt-navbar-text", settings.navbar_text_color):
+		rules.append(
+			".navbar .navbar-brand,\n"
+			".navbar .navbar-nav > li > .nav-link,\n"
+			".navbar #navbar-breadcrumbs li a {\n"
+			"  color: var(--pt-navbar-text) !important;\n}"
+		)
+
+	# primary button
+	if var("--pt-btn-primary-bg", settings.primary_button_background):
+		rules.append(
+			".btn.btn-primary {\n  background-color: var(--pt-btn-primary-bg) !important;\n}"
+		)
+		rules.append(
+			".form-control:focus {\n"
+			"  box-shadow: 0 0 0 1px var(--pt-btn-primary-bg) !important;\n}"
+		)
+	if var("--pt-btn-primary-text", settings.primary_button_text):
+		rules.append(".btn.btn-primary {\n  color: var(--pt-btn-primary-text) !important;\n}")
+	if var("--pt-btn-primary-hover-bg", settings.primary_button_hover_background):
+		rules.append(
+			".btn.btn-primary:hover {\n"
+			"  background-color: var(--pt-btn-primary-hover-bg) !important;\n}"
+		)
+
+	# secondary button
+	if var("--pt-btn-secondary-bg", settings.secondary_button_background):
+		rules.append(
+			".btn.btn-secondary {\n  background-color: var(--pt-btn-secondary-bg) !important;\n}"
+		)
+	if var("--pt-btn-secondary-text", settings.secondary_button_text):
+		rules.append(".btn.btn-secondary {\n  color: var(--pt-btn-secondary-text) !important;\n}")
+
+	# cards / widgets
+	if var("--pt-card-bg", settings.card_background_color):
+		rules.append(
+			".card, .widget.card-box {\n  background-color: var(--pt-card-bg) !important;\n}"
+		)
+	if var("--pt-card-text", settings.card_text_color):
+		rules.append(
+			".card, .card p, .card span, .card li,\n"
+			".widget.card-box,\n"
+			".widget.links-widget-box .link-item {\n"
+			"  color: var(--pt-card-text) !important;\n}"
+		)
+	if var("--pt-card-header-bg", settings.card_header_color):
+		rules.append(
+			".card .card-header, .card-header {\n"
+			"  background-color: var(--pt-card-header-bg) !important;\n}"
+		)
+	if var("--pt-card-header-text", settings.card_header_text_color):
+		rules.append(
+			".card .card-header, .card-header {\n"
+			"  color: var(--pt-card-header-text) !important;\n}"
+		)
+
+	# form controls
+	if var("--pt-form-bg", settings.form_background_color):
+		rules.append(".form-control {\n  background-color: var(--pt-form-bg) !important;\n}")
+	if var("--pt-form-text", settings.form_text_color):
+		rules.append(".form-control {\n  color: var(--pt-form-text) !important;\n}")
+
+	# section headings — scoped to page/section headings, NOT every h1-h6 in Desk
+	if var("--pt-section-heading", settings.section_heading_color):
+		rules.append(
+			".page-title .title-text,\n"
+			".form-section .section-head,\n"
+			".section-head,\n"
+			".widget .widget-title {\n"
+			"  color: var(--pt-section-heading) !important;\n}"
+		)
+
+	# field labels
+	if var("--pt-label-text", settings.label_text_color):
+		rules.append(
+			".control-label, .grid-heading-row {\n  color: var(--pt-label-text) !important;\n}"
+		)
+
+	if not rules:
+		return ""
+
+	var_block = ":root {\n" + "\n".join(f"  {k}: {v};" for k, v in css_vars.items()) + "\n}"
+	return var_block + "\n\n" + "\n\n".join(rules)
+
+
+# ---------------------------------------------------------
+# FINAL BUNDLE
+# ---------------------------------------------------------
+
+
+def merge_theme_css() -> str:
+	"""The single served stylesheet. Order (later wins at equal specificity):
+	settings chrome CSS -> active theme css_content (the hand-editable artifact,
+	whose CUSTOM tail is therefore always last)."""
+	settings = frappe.get_cached_doc("Portal Theme Setting")
+	active = frappe.get_all(
+		"Portal Theme",
+		filters={"is_active": 1},
+		fields=["name", "css_content"],
+		limit=1,
+	)
+
+	parts = []
+
+	settings_css = build_settings_css(settings)
+	if settings_css:
+		parts.append("/* -- Portal Theme Setting (desk chrome) -- */\n" + settings_css)
+
+	if active and (active[0].css_content or "").strip():
+		parts.append(
+			f"/* -- active Portal Theme: {active[0].name} -- */\n" + active[0].css_content
+		)
+
+	if not parts:
+		return ""
+
+	header = (
+		"/* portal_theme bundle — settings: "
+		f"{'on' if settings.enable else 'off'}; theme: {active[0].name if active else 'none'} */"
+	)
+	return header + "\n\n" + "\n\n".join(parts)
