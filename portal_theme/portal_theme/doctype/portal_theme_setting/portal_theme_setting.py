@@ -14,4 +14,4 @@ class PortalThemeSetting(Document):
 			self.status = "Inactive"
 
 	def on_update(self):
-		css_builder.clear_theme_cache()
+		css_builder.queue_clear_theme_cache()

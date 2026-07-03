@@ -14,4 +14,4 @@ class ThemeTemplate(Document):
 
 	def on_update(self):
 		# templates only affect the next Regenerate, but invalidating is free
-		css_builder.clear_theme_cache()
+		css_builder.queue_clear_theme_cache()

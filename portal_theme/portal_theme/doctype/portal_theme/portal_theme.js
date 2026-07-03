@@ -12,7 +12,7 @@ frappe.ui.form.on("Portal Theme", {
 			}
 			frappe.confirm(
 				__(
-					"Rebuild the generated section from Theme Variables, the linked Theme Template and Component Style rows?<br><br>The current CSS will be saved as a revision. Everything after the <code>PT:CUSTOM:BEGIN</code> marker is preserved."
+					"Rebuild the generated section from Theme Variables, the linked Theme Template and Component Style rows?<br><br>The current CSS will be saved as a revision first. Everything after the <code>PT:CUSTOM:BEGIN</code> marker is preserved; content <b>without</b> PT markers is replaced entirely (restorable from the revision)."
 				),
 				() => frm.call("regenerate_css").then(() => frm.reload_doc())
 			);
@@ -20,14 +20,14 @@ frappe.ui.form.on("Portal Theme", {
 	},
 
 	add_variables(frm) {
+		// validate BEFORE the destructive clear_table
 		if (!frm.doc.theme_template) {
 			frappe.throw("Select Theme Template first.");
 		}
-
-		frm.clear_table("theme_variables");
 		if (!frm.doc.primary && !frm.doc.secondary && !frm.doc.accent && !frm.doc.neutral) {
 			frappe.throw("Please select at least one color.");
 		}
+		frm.clear_table("theme_variables");
 		generate_color_rows(frm);
 	},
 });
@@ -42,11 +42,6 @@ function generate_color_rows(frm) {
 
 	colors.forEach((c) => {
 		if (!c.value) return;
-
-		let exists = (frm.doc.theme_variables || []).some(
-			(row) => row.variable_name === `--${c.name}`
-		);
-		if (exists) return;
 
 		const light = c.value;
 		const dark = darkenColor(light, 35);

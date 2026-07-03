@@ -21,7 +21,9 @@ def get_theme_bundle():
 	try:
 		css = css_builder.merge_theme_css()
 	except Exception:
-		frappe.log_error(title="Portal Theme: bundle build failed")
+		# defer_insert: GET request transactions are rolled back in v15, which
+		# would silently discard a directly-inserted Error Log
+		frappe.log_error(title="Portal Theme: bundle build failed", defer_insert=True)
 		return {"css": "", "hash": "", "cached": False}
 
 	payload = {

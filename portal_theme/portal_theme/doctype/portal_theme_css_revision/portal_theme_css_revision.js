@@ -20,6 +20,8 @@ frappe.ui.form.on("Portal Theme CSS Revision", {
 						})
 						.then(() => {
 							frappe.show_alert({ message: __("Revision restored"), indicator: "green" });
+							// evict the cached doc so the form refetches the restored CSS
+							frappe.model.remove_from_locals("Portal Theme", frm.doc.portal_theme);
 							frappe.set_route("Form", "Portal Theme", frm.doc.portal_theme);
 						});
 				}

@@ -30,6 +30,17 @@ class PortalTheme(Document):
 		self.slugify_theme_name()
 
 		if not (self.css_content or "").strip():
+			# cleared on an existing doc: snapshot the old CSS before reseeding
+			# (make_css_revision no-ops on empty old_css, so first saves are unaffected)
+			if not self.is_new():
+				before = self.get_doc_before_save()
+				if before:
+					make_css_revision(
+						self.name,
+						before.css_content,
+						"Manual Edit",
+						note="Cleared in editor; reseeded generated CSS",
+					)
 			# first save (or cleared field): seed generated CSS + custom tail
 			self.css_content = css_builder.initial_css_content(self)
 		elif not self.is_new():
@@ -42,7 +53,7 @@ class PortalTheme(Document):
 		css_builder.validate_component_styles(self)
 
 	def on_update(self):
-		css_builder.clear_theme_cache()
+		css_builder.queue_clear_theme_cache()
 
 	def on_trash(self):
 		revisions = frappe.get_all(
@@ -52,7 +63,7 @@ class PortalTheme(Document):
 			frappe.delete_doc(
 				"Portal Theme CSS Revision", name, ignore_permissions=True, force=True
 			)
-		css_builder.clear_theme_cache()
+		css_builder.queue_clear_theme_cache()
 
 	# ---------------------------------------------------------
 	# SLUG UTILITIES
@@ -79,11 +90,13 @@ class PortalTheme(Document):
 
 		if not self.theme_template:
 			frappe.throw(_("Select a Theme Template before regenerating."))
+		# same guard as the save path — regenerate must not serve rows a save would reject
+		css_builder.validate_component_styles(self)
 
 		make_css_revision(self.name, self.css_content, "Regenerate")
 		new_css = css_builder.regenerate_css_content(self)
 		self.db_set("css_content", new_css)
-		css_builder.clear_theme_cache()
+		css_builder.queue_clear_theme_cache()
 		return new_css
 
 
@@ -131,5 +144,5 @@ def restore_revision(revision):
 
 	make_css_revision(theme.name, theme.css_content, "Pre-Restore", note=_("Before restoring {0}").format(revision))
 	theme.db_set("css_content", rev.css_content)
-	css_builder.clear_theme_cache()
+	css_builder.queue_clear_theme_cache()
 	return theme.name
