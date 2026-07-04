@@ -246,4 +246,4 @@ web_include_js = ["/assets/portal_theme/js/theme_loader.js"]
 
 # Fixtures
 # ------------------
-fixtures = [{"dt": "Theme Template", "filters": [["name", "in", ["16.0.0-dev"]]]}]
+fixtures = [{"dt": "Theme Template", "filters": [["name", "in", ["15.15.0", "16.0.0-dev"]]]}]

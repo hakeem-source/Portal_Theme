@@ -139,7 +139,8 @@
    "label": "Add Variables"
   },
   {
-   "description": "Required only for Regenerate CSS — a theme can also be fully hand-written.",
+   "default": "15.15.0",
+   "description": "Required only for Regenerate CSS — a theme can also be fully hand-written. Defaults to the dashboard-safe '15.15.0' template; the legacy '16.0.0-dev' restyles the workspace and is not recommended.",
    "fieldname": "theme_template",
    "fieldtype": "Link",
    "label": "Theme Template",

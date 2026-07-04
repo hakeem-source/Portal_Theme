@@ -90,8 +90,94 @@ def get_template_css(theme) -> str:
 	)
 
 
+# ---------------------------------------------------------
+# COLOR MATH (for the auto readable row-hover)
+# ---------------------------------------------------------
+
+def _hxrgb(h):
+	h = (h or "").strip().lstrip("#")
+	if len(h) == 3:
+		h = "".join(c * 2 for c in h)
+	return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _rgbhx(t):
+	return "#%02X%02X%02X" % tuple(max(0, min(255, round(c))) for c in t)
+
+
+def _blend(a, b, t):
+	ra, rb = _hxrgb(a), _hxrgb(b)
+	return _rgbhx(tuple(ra[i] + (rb[i] - ra[i]) * t for i in range(3)))
+
+
+def _lin(c):
+	c /= 255.0
+	return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _lum(h):
+	r, g, b = _hxrgb(h)
+	return 0.2126 * _lin(r) + 0.7152 * _lin(g) + 0.0722 * _lin(b)
+
+
+def _contrast(a, b):
+	la, lb = _lum(a), _lum(b)
+	hi, lo = max(la, lb), min(la, lb)
+	return (hi + 0.05) / (lo + 0.05)
+
+
+def _readable(bg, prefer):
+	"""theme text token if it clears AA on bg, else near-black/near-white — whichever wins."""
+	if prefer and _contrast(bg, prefer) >= 4.5:
+		return prefer
+	return "#111418" if _contrast(bg, "#111418") >= _contrast(bg, "#F5F5F5") else "#F5F5F5"
+
+
+def _theme_var(theme, name):
+	for row in theme.get("theme_variables") or []:
+		if (row.variable_name or "").strip() == name:
+			return row
+	return None
+
+
+def build_row_hover_css(theme) -> str:
+	"""List-row hover that ALWAYS outranks the zebra stripe (which is !important) AND
+	stays readable. Auto-derived from the theme's surface (--secondary) + accent, so a
+	striped row never loses its hover and hover never makes a row unreadable. The
+	`nth-child(even):hover` selector (specificity 0,4,0) beats the zebra's (0,3,0)."""
+	sec = _theme_var(theme, "--secondary")
+	acc = _theme_var(theme, "--accent")
+	if not sec or not acc:
+		return ""
+	try:
+		sL = sec.light_value
+		sD = sec.dark_value or sL
+		aL = acc.light_value
+		aD = acc.dark_value or aL
+		hL = _blend(sL, aL, 0.13)
+		hD = _blend(sD, aD, 0.13)
+		tL = _readable(hL, sec.light_text or "#111418")
+		tD = _readable(hD, sec.dark_text or "#F5F5F5")
+	except Exception:
+		return ""  # non-hex values — skip rather than break generation
+
+	bg = ".list-row-container:hover .list-row, .list-row-container:nth-child(even):hover .list-row"
+	tx = (".list-row-container:hover .list-row a, .list-row-container:hover .list-row .ellipsis, "
+	      ".list-row-container:hover .list-row .level-item, .list-row-container:hover .list-row .list-row-col")
+
+	def dark(sel):
+		return ", ".join('[data-theme="dark"] ' + p.strip() for p in sel.split(","))
+
+	return (
+		f"{bg} {{ background-color: {hL} !important; color: {tL} !important; }}\n"
+		f"{tx} {{ color: {tL} !important; }}\n"
+		f"{dark(bg)} {{ background-color: {hD} !important; color: {tD} !important; }}\n"
+		f"{dark(tx)} {{ color: {tD} !important; }}"
+	)
+
+
 def build_generated_css(theme) -> str:
-	"""The full generated (sentinel-wrapped) section: tokens -> template -> component rows."""
+	"""The full generated (sentinel-wrapped) section: tokens -> template -> component rows -> row hover."""
 	parts = [
 		GENERATED_BEGIN,
 		f"/* theme: {theme.theme_name or theme.name} — rebuilt by the Regenerate CSS button; edits in this section are overwritten */",
@@ -105,6 +191,10 @@ def build_generated_css(theme) -> str:
 	component_css = build_component_css(theme)
 	if component_css:
 		parts += ["", "/* -- component styles (Component Style rows) -- */", component_css]
+
+	row_hover = build_row_hover_css(theme)
+	if row_hover:
+		parts += ["", "/* -- row hover (auto: outranks zebra, contrast-safe) -- */", row_hover]
 
 	parts.append(GENERATED_END)
 	return "\n".join(parts)
